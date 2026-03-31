@@ -2,7 +2,7 @@
 
 This repository contains simulations of a Nonlinear Model Predictive Controller (NMPC) for a nonholonomic Dubins vehicle, provided in both **MATLAB** and **Python**.
 
-The control architecture is specifically designed to bridge finite-horizon NMPC with infinite-horizon Lyapunov stability, directly implementing the theoretical framework outlined in Lev Rapoport's Statement of Work (SOW).
+The control architecture is specifically designed to bridge finite-horizon NMPC with infinite-horizon Lyapunov stability.
 
 ## Core Mathematical Framework
 This controller departs from standard "short-sighted" NMPC by guaranteeing Asymptotic Stability via the following mechanisms:
