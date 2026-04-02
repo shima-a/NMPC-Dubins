@@ -5,14 +5,15 @@ import matplotlib.pyplot as plt
 
 # =========================================================================
 # Dynamic LMI-Based NMPC for Dubins Path Tracking (Curved Path)
-# Python Translation of Shima Akbari's MATLAB code
+# Shima Akbari
+# Last Modified: 2 April 2026
 # =========================================================================
 
 # 1. Dubins Robot Physical Parameters & Constraints
 v = 1.0            # Forward velocity (m/s)
 H = 0.5            # Wheelbase (m)
 u_max = 1.0        # Physical steering rate limit |u| <= u_max (rad/s)
-kappa = 0.1        # Path curvature (1/m)
+kappa = 0        # Path curvature (1/m). 0.1 = tracking a 10m radius curve
 
 # NMPC Horizon Setup
 Tp = 1.5           # Prediction Horizon (seconds)
@@ -20,21 +21,24 @@ dt = 0.1           # Sampling time
 N = int(Tp / dt)   # Number of prediction steps
 
 # =========================================================================
-# 2. Dynamic LMI Synthesis (Bellman Upper Bound & LTV)
+# 2. Dynamic LMI Synthesis (SOW Point 2 & 3: Bellman Upper Bound & LTV)
 # =========================================================================
 print("=================================================================")
 print("--- PHASE 1: Computing Upper-Bound Bellman Matrix (P) via LMI ---")
 print("=================================================================")
 
+# We extract the relative-degree-3 cross-track error subsystem.
 A = np.array([[0, 1, 0], 
               [0, 0, 1], 
               [0, 0, 0]])
 B = np.array([[0], [0], [1]])
 
-rho_min = 0.5
-rho_max = 1.0
+# SOW Point 3: The saturator "spoils" the feedback linearization. 
+# We model this by embedding the system into an LTV differential inclusion
+rho_min = 0.5  # Minimum saturation ratio (50% of requested control)
+rho_max = 1.0  # Maximum saturation ratio (100% - no saturation)
 
-# Define CVXPY Variables for SDP
+# Define CVXPY Variables for SDP (Q = P^-1, Y = K*Q)
 Q = cp.Variable((3, 3), symmetric=True)
 Y = cp.Variable((1, 3))
 
@@ -44,24 +48,24 @@ constraints = [
     Q << 100 * np.eye(3)    # Upper bound to prevent numerical explosion
 ]
 
-# LMI 1 & 2: Absolute Stability across LTV Polytope Vertices
+# LMI 1 & 2: Absolute Stability across LTV Polytope Vertices (Vertices of rho)
 LMI1 = A @ Q + Q @ A.T + rho_min * (B @ Y + Y.T @ B.T)
 LMI2 = A @ Q + Q @ A.T + rho_max * (B @ Y + Y.T @ B.T)
 constraints.append(LMI1 << -1e-4 * np.eye(3))
 constraints.append(LMI2 << -1e-4 * np.eye(3))
 
 # LMI 3: Control Constraints (Schur Complement)
-scale = H / (v**2)
+scale = H / (v**2)  # Physical-to-Virtual mapping factor
 block_matrix = cp.bmat([
     [Q, scale * Y.T],
     [scale * Y, np.array([[u_max**2]])]
 ])
 constraints.append(block_matrix >> 0)
 
-# Objective: Maximize Trace(Q) -> Minimize -Trace(Q)
+# Objective: Maximize Trace(Q) to maximize the Attraction Domain volume
 objective = cp.Minimize(-cp.trace(Q))
 
-# Solve the Semi-Definite Program
+# Solve the Semi-Definite Program (SDP) dynamically
 prob = cp.Problem(objective, constraints)
 prob.solve(solver=cp.SCS, verbose=False)
 
@@ -101,7 +105,7 @@ def nmpc_cost(U, x0, N, dt, P, v, H, kappa):
         # Running Cost
         J += (x.T @ Q_stage @ x + R_stage * u**2) * dt
         
-    # Constant Upper-Bound Bellman Terminal Cost
+    # SOW Point 2: Apply the Constant Upper-Bound Bellman Terminal Cost
     z_end = get_z_state(x, v, H, kappa)
     J += z_end.T @ P @ z_end
     return J
@@ -115,6 +119,7 @@ def nmpc_qad_constraint(U, x0, N, dt, P, v, H, kappa):
         x_dot = np.array([ye_dot, th_dot, u])
         x = x + x_dot * dt
         
+    # SOW Point 3: Quadratic Attraction Domain (QAD) Enforcement    
     z_end = get_z_state(x, v, H, kappa)
     # Force state to be inside ellipsoid: z^T P z - 1 <= 0
     c = z_end.T @ P @ z_end - 1.0
@@ -152,7 +157,7 @@ for k in range(steps - 1):
     # Define constraint dictionary for scipy
     cons = {'type': 'ineq', 'fun': lambda U: nmpc_qad_constraint(U, x_current, N, dt, P, v, H, kappa)}
     
-    # Solve NLP
+    # Solve finite-horizon optimal control problem
     res = minimize(nmpc_cost, u0, args=(x_current, N, dt, P, v, H, kappa),
                    method='SLSQP', bounds=bounds, constraints=cons, options={'disp': False})
     
@@ -168,6 +173,7 @@ for k in range(steps - 1):
     u_history[k] = u_applied
     qad_history[k] = c_val
     
+    # Print Live Diagnostics
     print(f" {k:04d} | {x_current[0]:+0.4f} m   | {J_opt:0.4f}       | {u_applied:+0.4f} rad/s| {c_val:+0.4f}")
     
     # Simulate real system
@@ -187,6 +193,7 @@ time_arr = np.arange(0, sim_time, dt)
 
 plt.figure(figsize=(8, 10))
 
+# FIGURE 1: Physical System States
 plt.subplot(3, 1, 1)
 plt.plot(time_arr, x_history[0, :], 'b', linewidth=2)
 plt.title('Cross-Track Error (y_e)')
@@ -211,6 +218,7 @@ plt.tight_layout()
 plt.figure(figsize=(8, 10))
 time_steps = np.arange(1, steps)
 
+# FIGURE 2: Analytical Metrics
 plt.subplot(3, 1, 1)
 plt.plot(time_steps, cost_history, 'k', linewidth=2)
 plt.title('Optimal Bellman Cost (J*)')
