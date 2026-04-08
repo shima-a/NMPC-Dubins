@@ -2,14 +2,14 @@
 
 This repository contains simulations of a Nonlinear Model Predictive Controller (NMPC) for a nonholonomic Dubins vehicle, provided in both **MATLAB** and **Python**.
 
-The control architecture is specifically designed to bridge finite-horizon NMPC with infinite-horizon Lyapunov stability.
+The control architecture is specifically designed to bridge finite-horizon NMPC with infinite-horizon Lyapunov stability, directly implementing the theoretical framework outlined in Lev Rapoport's Statement of Work (SOW).
 
 ## Core Mathematical Framework
 This controller departs from standard "short-sighted" NMPC by guaranteeing Asymptotic Stability via the following mechanisms:
 
 1. **Solving the Singular Problem:** A running stage cost is implemented to convexify the Hamiltonian, preventing the erratic "bang-bang" steering associated with pure terminal-cost affine systems.
 2. **Constant Upper-Bound Bellman Matrix:** Instead of computing a real-time state-dependent Riccati equation, a constant upper-bound matrix `P` is synthesized offline to act as the terminal penalty.
-3. **LTV Embedding & LMI Synthesis:** The physical steering saturator is modeled as an uncertainty parameter (`rho`), embedding the closed-loop system into a Linear Time-Varying (LTV) differential inclusion. Linear Matrix Inequalities (LMIs) are solved dynamically to find the `P` matrix, guaranteeing absolute stability across the entire saturation polytope.
+3. **LTV Embedding & LMI Synthesis:** The physical steering saturator is modeled as an uncertainty parameter (`rho`). The resulting nonlinear system is immersed into a Linear Time-Varying (LTV) differential inclusion. This mathematical formulation allows the system to go beyond the strictly linear region and safely encounter the horizontal shelves of the saturator within the attraction domain. Linear Matrix Inequalities (LMIs) are solved dynamically to find the `P` matrix, guaranteeing absolute stability across the entire saturation polytope.
 4. **Curved Path Tracking:** The exact feedback linearization states (`z`) dynamically incorporate path curvature (`kappa`), allowing the controller to track rotating geometric frames rather than just straight lines.
 
 ## Included Implementations
@@ -27,5 +27,5 @@ This is the recommended version for users without a MATLAB license. It uses `cvx
 
 ## Simulation Flow
 Both scripts run in two automated phases:
-* **Phase 1:** Dynamically defines the LMI variables, applies the Schur complement for control bounds, and solves the Semi-Definite Program to compute the `P` matrix (Quadratic Attraction Domain).
-* **Phase 2:** Executes the NMPC loop over an 8-second simulation to track a curved path. It outputs a live console feed of the metrics and generates two verification plots.
+* **Phase 1:** Dynamically defines the LMI variables, applies the LTV sector limit to bound the control capabilities, and solves the Semi-Definite Program to compute the optimal `P` matrix (Quadratic Attraction Domain).
+* **Phase 2:** Executes the NMPC loop over an 8-second simulation to track a curved path. It outputs a live console feed of the metrics and generates detailed verification plots.
