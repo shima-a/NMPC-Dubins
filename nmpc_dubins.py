@@ -6,13 +6,14 @@ import matplotlib.pyplot as plt
 # =========================================================================
 # Dynamic LMI-Based NMPC for Dubins Path Tracking 
 # The Latest Fix: RK4 Integration + Warm Starting to Guarantee Strict Monotonicity
-# Shima Akbari, Last Modification: 14 April 2026
+# Shima Akbari, 
+# Last Modification: 15 April 2026
 # =========================================================================
 
 v = 1.0            
 H = 0.5            
 u_max = 1.0        
-kappa = 1.5      
+kappa = 1.2      
 
 Tp = 0.6           
 dt = 0.04          
