@@ -160,39 +160,23 @@ def build_nmpc_solver(P, u_bar, N, dxi):
     for i in range(N):
         c_i = c_par[i]
         u_i = U[0, i]
-        # control saturation
+        
+        # 1. Physical control saturation
         opti.subject_to(opti.bounded(-u_bar, u_i, u_bar))
 
-        # control saturation
-        opti.subject_to(opti.bounded(-u_bar, u_i, u_bar))
-
-        # --- ROBUSTNESS FIXES FOR CASADI ---
-        # Prevent the car from turning too sharply (limit to ~50 degrees).
-        # This completely stops V(z) from spiking when starting far away, 
-        # and inherently prevents the solver from encountering Inf math errors.
+        # 2. Kinematic approach angle bounds (~50 degrees)
         opti.subject_to(opti.bounded(-1.2, Z[1, i], 1.2))
         
-        # Prevent the NLP solver from exploring regions past the center of curvature
+        # 3. Prevent coordinate folding (Singularity barrier)
         opti.subject_to(c_i * Z[0, i] + 1.0 >= 0.05)
 
-        # terminal QAD constraint
-        zN = Z[:, N]
-        opti.subject_to(opti.bounded(-1.2, zN[1], 1.2)) # Apply heading bound to the final node
-        
-        # Smooth L2 slack variable to prevent Infeasible crashes from 8m away
-        slack = opti.variable()
-        opti.subject_to(slack >= 0)
-        opti.subject_to(zN.T @ Pm @ zN <= 1.0 + slack)
-
-        dU = ca.diff(U)
-        opti.minimize(zN.T @ Pm @ zN + 1e4 * (slack ** 2) + 0.1 * ca.sumsqr(dU))
-
-
+        # RK4 Dynamics
         def f(zz, c_val=c_i, u_val=u_i):
             zz1 = zz[0]
             zz2 = zz[1]
             d1 = (c_val * zz1 + 1.0) * zz2
-            d2 = u_val * (c_val * zz1 + 1.0) * (1.0 + zz2 ** 2) ** 1.5 \
+            # Square root trick to prevent Inf gradients
+            d2 = u_val * (c_val * zz1 + 1.0) * (1.0 + zz2 ** 2) * ca.sqrt(1.0 + zz2 ** 2) \
                  + c_val * (1.0 + zz2 ** 2)
             return ca.vertcat(d1, d2)
 
@@ -201,21 +185,24 @@ def build_nmpc_solver(P, u_bar, N, dxi):
         k3 = f(Z[:, i] + 0.5 * dxi * k2)
         k4 = f(Z[:, i] + dxi * k3)
         z_next = Z[:, i] + (dxi / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        
         opti.subject_to(Z[:, i + 1] == z_next)
 
-        # control saturation
-        opti.subject_to(opti.bounded(-u_bar, u_i, u_bar))
-
-    # terminal QAD constraint
+    # --- OUTSIDE THE LOOP (Terminal Constraints & Cost) ---
     zN = Z[:, N]
-    opti.subject_to(zN.T @ Pm @ zN <= 1.0)
+    opti.subject_to(opti.bounded(-1.2, zN[1], 1.2))
+    
+    # Soft exact penalty for the terminal QAD
+    slack = opti.variable()
+    opti.subject_to(slack >= 0)
+    opti.subject_to(zN.T @ Pm @ zN <= 1.0 + slack)
 
-    # terminal-only cost
-    opti.minimize(zN.T @ Pm @ zN)
+    # Objective: Terminal Cost + Slack Penalty + Singular Regularization
+    dU = ca.diff(U)
+    opti.minimize(zN.T @ Pm @ zN + 1e4 * (slack ** 2) + 0.1 * ca.sumsqr(dU))
 
     p_opts = {'print_time': 0}
-    s_opts = {'print_level': 0, 'max_iter': 300, 'tol': 1e-8,
-              'sb': 'yes'}
+    s_opts = {'print_level': 0, 'max_iter': 300, 'tol': 1e-8, 'sb': 'yes'}
     opti.solver('ipopt', p_opts, s_opts)
 
     return opti, Z, U, z0_par, c_par
